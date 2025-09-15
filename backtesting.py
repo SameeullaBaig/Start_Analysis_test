@@ -5,6 +5,8 @@ import openpyxl
 from openpyxl import Workbook
 
 import time
+import multiprocessing
+from itertools import product
 
 col_AssetSym = 'AssetSym' #
 col_HldDys   = 'HoldDaysMax' #
@@ -276,6 +278,67 @@ def get_signals_2(df_3, asset_sym, hld_dys, MA_win, EMA_spn, RSI_min, RSI_max):
 
 
 
+def run_backtest_for_params(df, assetsym, holddays, MAwin, spn, rmn, rmx):
+    """
+    Runs the backtest for a single combination of parameters.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame with stock data.
+        assetsym (str): The symbol of the asset.
+        holddays (int): The maximum number of days to hold the asset.
+        MAwin (int): The window for the moving average calculation.
+        spn (int): The span for the exponential moving average calculation.
+        rmn (int): The minimum RSI value for a buy signal.
+        rmx (int): The maximum RSI value for a sell signal.
+
+    Returns:
+        list: A list containing the results of the backtest for the given
+              parameters, or None if there are no trades.
+    """
+    print('a', holddays, MAwin, spn, rmn, rmx)
+    df_2 = RSIcalc(df,
+                   assetsym,
+                   holddays,
+                   MAwin,
+                   spn,
+                   rmn,
+                   rmx)
+
+    (buydL,
+     selldL) = get_signals_1(df_2,
+                            holddays)
+
+    print('b', len(buydL), len(selldL))
+
+    if len(buydL) > 0:
+        prftamt = df_2.loc[selldL].Open.values - df_2.loc[buydL].Open.values
+        len_0 = len(prftamt)
+        sum_0 = sum(prftamt)
+        mean_0 = prftamt.mean()
+        wins = [k for k in prftamt if k > 0]
+        winrate = (len(wins) / len_0) * 100
+        sum_p0 = sum(wins)
+        sum_n0 = sum_0 - sum_p0
+
+        result_row = [assetsym,
+                      holddays,
+                      MAwin,
+                      spn,
+                      rmn,
+                      rmx,
+                      sum_0,
+                      len_0,
+                      mean_0,
+                      sum_p0,
+                      sum_n0,
+                      len(wins),
+                      winrate]
+        print(
+            f'e {holddays} {MAwin} {spn} {rmn} {rmx} {len(buydL)} {sum_0:.2f} {mean_0:.2f} {winrate:.2f}')
+        return result_row
+    return None
+
+
 def main():
     """Main function to run the backtesting script."""
     start_time_1 = time.strftime("%H:%M:%S", time.localtime())
@@ -285,158 +348,78 @@ def main():
     df_data_file = 'Stock_Summary_ITC.xlsx'
 
     stk_summ_fl_nm_0 = data_fl_path + df_data_file
-    # stk_summ_fl_nm_0 = df_data_file
-    # print(stk_summ_fl_nm_0)
-
     df = pd.read_excel(stk_summ_fl_nm_0)
-    # print(df)
-
     df.set_index('Date', inplace=True)
-    # print(df.head())
-
-    xa = 'Stock_Summary_ITC_1.xlsx'
-    stk_summ_fl_nm_1 = data_fl_path + xa
-    # print(stk_summ_fl_nm_1)
 
     xabc = 'Stock_Summary_ITC_2.xlsx'
     stk_summ_fl_nm_2 = data_fl_path + xabc
-    # print(stk_summ_fl_nm_2)
 
     wb_1 = openpyxl.load_workbook(stk_summ_fl_nm_2)
-    ws_4 = wb_1["Data_0"]
 
     assetsym = 'ITC.NS'
 
+    param_ranges = {
+        'holddays': range(50, 0, -1),
+        'MAwin': range(200, 0, -1),
+        'spn': range(48, 0, -1),
+        'rmn': range(1, 31, 1),
+    }
+
+    param_combinations = list(product(
+        param_ranges['holddays'],
+        param_ranges['MAwin'],
+        param_ranges['spn'],
+        param_ranges['rmn'],
+    ))
+
+    # Add rmx to the parameter combinations
+    param_combinations_with_rmx = []
+    for params in param_combinations:
+        rmn = params[3]
+        for rmx in range(100, rmn, -1):
+            param_combinations_with_rmx.append(params + (rmx,))
+
+
+    with multiprocessing.Pool() as pool:
+        results = pool.starmap(run_backtest_for_params,
+                               [(df.copy(), assetsym) + params for params in param_combinations_with_rmx])
+
+    results = [r for r in results if r is not None]
+
     tot_rows = 0
-
-    len_0 = 0
-    sum_0 = 0
-    mean_0 = 0
-
-    wins = 0
-    winrate = 0
-
-    sum_p0 = 0
-    sum_n0 = 0
-
     sum_1 = 0
     mean_1 = 0
+    for result in results:
+        tot_rows += 1
+        sum_0 = result[6]
+        mean_0 = result[8]
+        winrate = result[12]
 
-    for holddays in range(50, 0, -1):
-        for MAwin in range(200, 0, -1):
-            for spn in range(48, 0, -1):
-                for rmn in range(1, 31, 1):
-                    # for rmn in range(     31, 41,  1) :
-                    # for rmn in range(     41, 51,  1) :
-                    # for rmn in range(     51, 61,  1) :
-                    # for rmn in range(     61, 71,  1) :
-                    # for rmn in range(     71, 81,  1) :
-                    # for rmn in range(     81, 91,  1) :
-                    # for rmn in range(     91, 100,  1) :
+        if sum_1 == 0:
+            sum_1 = sum_0
+            mean_1 = mean_0
+        if sum_1 < sum_0:
+            sum_1 = sum_0
+            mean_1 = mean_0
 
-                    # time.sleep(0.5)
-                    for rmx in range(100, rmn, -1):
-                        print('a', holddays, MAwin, spn, rmn, rmx)
-                        df_2 = RSIcalc(df,
-                                       assetsym,
-                                       holddays,
-                                       MAwin,
-                                       spn,
-                                       rmn,
-                                       rmx)
-                        # print(df_2.head(10))
-                        # print(len(df_2))
-                        # df_2.to_excel(stk_summ_fl_nm_1) # ,
-                        #              index = False)
+        result.extend([sum_1, mean_1])
 
-                        (buydL,
-                         selldL) = get_signals_1(df_2,
-                                                holddays)
+        if winrate < 50:
+            ws_4 = wb_1["Data_0"]
+        elif winrate >= 50 and winrate < 60:
+            ws_4 = wb_1["Data_1"]
+        elif winrate >= 60 and winrate < 70:
+            ws_4 = wb_1["Data_2"]
+        elif winrate >= 70 and winrate < 80:
+            ws_4 = wb_1["Data_3"]
+        elif winrate >= 80 and winrate < 90:
+            ws_4 = wb_1["Data_4"]
+        elif winrate >= 90 and winrate < 100:
+            ws_4 = wb_1["Data_5"]
+        else: # winrate == 100
+            ws_4 = wb_1["Data_6"]
+        ws_4.append(result)
 
-                        # (AssetSymL,
-                        #  HldDyL,
-
-                        #  MAwinL,
-                        #  EMAspnL,
-                        #  RSIminL,
-                        #  RSImaxL,
-
-                        #  RSI1L,
-                        #  buydL,
-                        #  buyaL,
-
-                        #  RSI2L,
-                        #  selldL,
-                        #  sellaL,
-
-                        #  sellnL) = get_signals_2(df_2,
-                        #                        assetsym,
-                        #                        holddays,
-                        #                        MAwin,
-                        #                        spn,
-                        #                        rmn,
-                        #                        rmx)
-
-                        print('b', len(buydL), len(selldL))
-                        # print('c', sellnL)
-
-                        prftamt = []
-                        prftpcent = []
-                        if len(buydL) > 0:
-                            tot_rows += 1
-                            prftamt = df_2.loc[selldL].Open.values - df_2.loc[buydL].Open.values
-                            # print('d', len(prftamt), prftamt)
-                            prftpcent = (prftamt / df_2.loc[buydL].Open.values) * 100
-                            len_0 = len(prftamt)
-                            sum_0 = sum(prftamt)
-                            mean_0 = prftamt.mean()
-                            wins = [k for k in prftamt if k > 0]
-                            winrate = (len(wins) / len_0) * 100
-                            sum_p0 = sum(wins)
-                            sum_n0 = sum_0 - sum_p0
-                            if sum_1 == 0:
-                                sum_1 = sum_0
-                                mean_1 = mean_0
-                            if sum_1 < sum_0:
-                                sum_1 = sum_0
-                                mean_1 = mean_0
-
-                            if winrate < 50:
-                                ws_4 = wb_1["Data_0"]
-                            if winrate >= 50 and winrate < 60:
-                                ws_4 = wb_1["Data_1"]
-                            if winrate >= 60 and winrate < 70:
-                                ws_4 = wb_1["Data_2"]
-                            if winrate >= 70 and winrate < 80:
-                                ws_4 = wb_1["Data_3"]
-                            if winrate >= 80 and winrate < 90:
-                                ws_4 = wb_1["Data_4"]
-                            if winrate >= 90 and winrate < 100:
-                                ws_4 = wb_1["Data_5"]
-                            if winrate == 100:
-                                ws_4 = wb_1["Data_6"]
-                            ws_4.append([assetsym,
-                                         holddays,
-                                         MAwin,
-                                         spn,
-                                         rmn,
-                                         rmx,
-                                         sum_0,
-                                         len_0,
-                                         mean_0,
-                                         sum_p0,
-                                         sum_n0,
-                                         len(wins),
-                                         winrate,
-                                         sum_1,
-                                         mean_1])
-                            print(
-                                f'e {holddays} {MAwin} {spn} {rmn} {rmx} {len(buydL)} {sum_0:.2f} {mean_0:.2f} {winrate:.2f}')
-                        # break
-                    # break
-                break
-            break
-        break
 
     print(1, start_time_1)
     print(2, time.strftime("%H:%M:%S", time.localtime()))

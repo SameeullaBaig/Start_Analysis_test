@@ -8,6 +8,10 @@ The script reads historical stock data from an Excel file, calculates the RSI fo
 
 The results are saved to an Excel file, with different sheets for different win rate ranges.
 
+## Performance
+
+This script uses the `multiprocessing` module to run the backtests for different parameter combinations in parallel. This can significantly speed up the execution time on multi-core machines.
+
 ## How to use
 
 1.  **Install the dependencies:**
